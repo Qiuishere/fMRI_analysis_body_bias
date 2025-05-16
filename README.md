@@ -46,6 +46,7 @@ In case you need to change the name of the files or something else, you can do s
 - check available option: _module help fmriprep_ or _fmriprep_sub -h_
 - skip bids validation (only after using bidsvalidator to confirm no major errors): _py bids -a " --skip-bids-validation —ignore fieldmaps"_
 - output: derivatives
+  
 **SPM: smoothing**
 - move: _cd project/3018068.01/Analysisi_scripts/MRI_preproc_smoothing_
 - run on the terminal: _matlab_sub running_script.m_
