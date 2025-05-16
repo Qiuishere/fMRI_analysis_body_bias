@@ -1,0 +1,115 @@
+  function run_sub_MVPA(taskType, Subs, thesub, ROIs, Condis,method)
+Dirs = get_directories_for_thesub(Subs(thesub));
+betaDir = fullfile(Dirs.betas, taskType);
+ROIdir{1} = fullfile('Results', 'Masks', 'Templates', 'realigned_V1_mask.nii');
+ROIdir{2} = fullfile(Dirs.masks, [ROIs{2}, '.nii']);
+ROIdir{3} = fullfile(Dirs.masks, [ROIs{3}, '.nii']);
+resultDir = fullfile(Dirs.mvpa, 'Test');
+if ~exist( resultDir, 'dir')
+    mkdir( resultDir);
+end
+
+Nroi = length(ROIs);
+for theroi = 1:Nroi
+    
+    cfg = decoding_defaults();
+    
+    
+    cfg.analysis = 'roi' ;
+    cfg.files.mask = ROIdir{theroi};
+    cfg.results.overwrite = 1;
+    cfg.results.dir = resultDir;
+    labelnames = Condis;
+
+% since the labels are arbitrary, we will set them randomly to -1 and 1
+labels(1:2:length(labelnames)) = -1;
+labels(2:2:length(labelnames)) =  1;
+%     for label1 = 1:length(Condis)
+%         for label2 = 1: length(Condis)
+%             if label2>=label1 % get only the upper triangle
+%                 
+%                 label1name = Condis{label1};
+%                 label2name = Condis{label2};
+%                 labelnames = {label1name,label2name};
+%                 labels = 1:length(labelnames);
+%                 
+%                 if strcmp(method, 'distance')
+%                     
+%                     cfg.decoding.software = 'distance'; % the difference to 'similarity' is that this averages across data with the same label
+%                     cfg.decoding.method = 'classification'; % this is more a placeholder
+%                     cfg.decoding.train.classification.model_parameters = 'cveuclidean'; % cross-validated Euclidean after noise normalization
+%                     cfg.results.output = 'other_meandist';
+%                     % These parameters carry out the multivariate noise normalization using the
+%                     % residuals
+%                     cfg.scale.method = 'cov'; % we scale by noise covariance
+%                     cfg.scale.estimation = 'separate'; % we scale all data for each run separately while iterating across searchlight spheres
+%                     cfg.scale.shrinkage = 'lw2'; % Ledoit-Wolf shrinkage retaining variances
+%                     [misc.residuals,cfg.files.residuals.chunk] = residuals_from_spm(fullfile(betaDir,'SPM.mat'),cfg.files.mask); % this only needs to be run once and can be saved and loaded
+%                     % The following function extracts all beta names and corresponding run
+%                     % numbers from the SPM.mat
+%                     regressor_names = design_from_spm(betaDir);
+%                     
+%                     % Extract all information for the cfg.files structure (labels will be [1 -1] )
+%                     cfg = decoding_describe_data(cfg,labelnames,labels,regressor_names,betaDir);
+%                     
+%                     % This creates a design in which cross-validation is done between the distance estimates
+%                     cfg.design = make_design_similarity_cv(cfg);
+%                     
+%                     % Run decoding
+%                     results = decoding(cfg,[],misc);
+                    
+
+                    
+%                 elseif      strcmp(method, 'corr')
+                    
+                    % set everything to similarity analysis (for available options as model parameters, check decoding_software/pattern_similarity/pattern_similarity.m)
+                    cfg.decoding.software = 'similarity';
+                    cfg.decoding.method = 'classification';
+                    cfg.decoding.train.classification.model_parameters = 'Spearman'; % this is pearson correlation
+                    cfg.results.output = 'other_average';
+                    
+                    cfg.scale.method = 'min0max1';
+                    cfg.scale.estimation = 'all'; % scaling across all data is equivalent to no scaling (i.e. will yield the same results), it only changes the data range which allows libsvm to compute faster
+                    
+                    % The following function extracts all beta names and corresponding run
+                    % numbers from the SPM.mat
+                    regressor_names = design_from_spm(betaDir);
+                    
+                    % Extract all information for the cfg.files structure (labels will be [1 -1] )
+                    cfg = decoding_describe_data(cfg,labelnames,labels,regressor_names,betaDir);
+                    
+                    % This creates a design in which all data is used to calculate the similarity
+                    cfg.design = make_design_similarity(cfg);
+                    
+                    results = decoding(cfg);
+%                 end
+                % this toolbox doesn average runs, so we have to do it ourselves
+                matrix = results.other_average.output{1,1} ;
+                imagesc(matrix)
+                Ncondi  = length(labelnames);
+                Nrun = size(matrix,1)/Ncondi;
+for condi1 = 1:Ncondi
+    for condi2 = 1:Ncondi
+        initId.r = Nrun * (condi1-1) +1;
+        initId.c = Nrun * (condi2-1) +1;
+        submatrix = matrix(initId.r:(initId.r+Nrun-1),initId.c:(initId.c+Nrun-1));
+        aveMatrix(condi1,condi2) = mean(submatrix);
+    end
+end
+
+
+                figure;imagesc(aveMatrix);
+                acc(:,:,theroi) = mean(aveMatrix,3);
+                save(['Results/sub-' num2str(thesub) '_' method '.mat'], 'acc')
+
+%             end
+%             end
+%             end
+%             
+    
+    
+    
+    
+    
+end
+save(['sub-' num2str(thesub) method '.mat'], 'acc')

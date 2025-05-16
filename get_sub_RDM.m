@@ -1,0 +1,103 @@
+function rdmCollection = get_sub_RDM(taskType, Subs, thesub, ROIs,metric)
+%% fmri_rsa_compute_performRSA_ROI(roiName)
+%
+% computes rdms for each subject, saves results
+% at subject and group-average level
+%
+% Timo Flesch, 2019
+% Human Information Processing Lab
+% University of Oxford
+
+Dirs = get_directories_for_thesub(Subs(thesub));
+betaDir = fullfile(Dirs.betas, taskType);
+resultDir = fullfile(Dirs.mvpa, 'Test');
+
+Nroi = length(ROIs);
+ROIdir{1} = fullfile('Results', 'Masks', 'Templates', 'realigned_V1_mask.nii');
+ROIdir{2} = fullfile(Dirs.masks, [ROIs{2}, '.nii']);
+ROIdir{3} = fullfile(Dirs.masks, [ROIs{3}, '.nii']);
+
+params = fmri_rsa_compute_setParams();
+params.rsa.metric = metric;
+
+if exist('ROI','var') % if user has specified roi, overwrite params
+    params.names.roiMask = ROI;
+end
+
+
+figure
+
+for theroi = 1:Nroi
+    
+    % load group level mask (wholebrain OR structural ROI)
+    % switch params.rsa.method
+    % case 'searchlight'
+    %   gmaskMat  = fmri_io_nifti2mat([params.names.groupMask '.nii'],params.dir.maskDir);
+    % case 'roi'
+    gmaskMat  = spm_read_vols(spm_vol(ROIdir{theroi}),1);
+    % end
+    gmaskVect = gmaskMat(:);
+    mask_vox = find(~isnan(gmaskVect)& gmaskVect~=0);
+    disp(['processing subject ' num2str(thesub) '; ROI:' ROIs{theroi}]);
+    
+    
+    
+    % navigate to subject folder
+    
+    % load SPM.mat
+    cd(betaDir)
+    load(fullfile(betaDir, 'SPM.mat'));
+    params.num.runs = length(SPM.Sess);
+    params.num.conditions = length(SPM.Sess(1).U);
+    
+    % import betas, mask them appropriately
+    disp('....importing betas');
+    bStruct = struct();
+    [b,bStruct.events] = fmri_rsa_helper_getBetas(SPM, mask_vox);
+    nanID = isnan(b(1,:));
+    mask_vox(nanID)=[];
+    
+    % now do it again, without nan features;
+    [b,bStruct.events] = fmri_rsa_helper_getBetas(SPM, mask_vox);
+    bStruct.b = reshape(b,[size(b,1)/length(SPM.Sess), length(SPM.Sess),size(b,2)]);
+    bStruct.events = reshape(bStruct.events,[params.num.conditions,params.num.runs]);
+    bStruct.idces = mask_vox;
+    
+    % if mahalanobis, import residuals, whiten betas
+    if strcmp(params.rsa.metric,'mahalanobis') || strcmp(params.rsa.metric,'crossnobis') || params.rsa.whiten==1
+        disp('....importing residuals')
+        r = fmri_rsa_helper_getResiduals(SPM,mask_vox,0);
+        r = reshape(r,[size(r,1)/params.num.runs,params.num.runs,size(r,2)]);
+        rStruct = struct();
+        rStruct.r = r;
+        rStruct.idces = mask_vox;
+        disp(' .....  whitening the parameter estimates');
+        bStruct.b = fmri_rsa_helper_whiten(bStruct.b,rStruct.r);
+    end
+    % compute rdms
+    switch params.rsa.whichruns
+        case 'avg'
+            rdmCollection(:,:,theroi) = fmri_rsa_compute_rdmSet_avg(bStruct.b,metric);
+        case 'cval'
+            rdmCollection(:,:,theroi) = fmri_rsa_compute_rdmSet_cval(bStruct.b,metric);
+    end
+    subplot(1,Nroi,theroi)
+    imagesc(rdmCollection(:,:,theroi))
+    cd(Dirs.homeDir);
+    
+end
+% save results (with condition labels)
+subRDM = struct();
+subRDM.rdm = rdmCollection;
+subRDM.ROIs = ROIs;
+subRDM.mask_vox = mask_vox;
+subRDM.events   = bStruct.events(:,1);
+subRDM.subID    = thesub;
+save(fullfile(resultDir, [metric,'-subRDM.mat']), 'subRDM');
+
+saveas(gcf,fullfile(resultDir, [metric,'-subRDM.png']))
+
+% navige to group level folder
+
+
+

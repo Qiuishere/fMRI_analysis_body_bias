@@ -1,0 +1,170 @@
+function Decoding
+
+clear
+
+Set_Up;
+taskType = 'Test-angle';
+useCluster = 1;
+
+%% define conditions to decode
+onsetFile = fullfile('Results/Onsets/sub-001', ['onset_' taskType '_run-1.mat' ]);
+load(onsetFile, 'names')
+Condis = names;
+Ncondi= length(Condis);
+
+% Condis = {'Front-L', 'Front-R', 'Back-L', 'Back-R'};
+ROIs = {'V1', 'Body'};
+
+acc= zeros(Ncondi,Ncondi,length(Subs),length(ROIs));
+
+for thesub = 1:length(Subs)
+    
+    Dirs = get_directories_for_thesub(Subs(thesub));
+    betaDir = fullfile(Dirs.betas, taskType);
+    ROIdir{1} = fullfile('Results', 'Masks', 'Templates', 'realigned_V1_mask.nii');
+    ROIdir{2} = fullfile(Dirs.masks, [ROIs{2}, '.nii']);
+    resultDir = fullfile(Dirs.mvpa, 'Test');
+    if ~exist( resultDir, 'dir')
+        mkdir( resultDir);
+    end
+    
+    for theroi = 1:length(ROIs)
+        
+        cfg = decoding_defaults();
+        
+        cfg.analysis = 'roi' ;
+        cfg.files.mask = ROIdir{theroi};
+        cfg.results.overwrite = 1;
+        
+        cfg.results.dir = resultDir;
+        regressor_names = design_from_spm(betaDir); % beta_dir is directory of SPM model
+        
+        for label1 = 1:length(Condis)
+            for label2 = 1: length(Condis)
+                if label2>label1 % get only the upper triangle
+                    
+                    label1name = Condis{label1};
+                    label2name = Condis{label2};
+                    cfg = decoding_describe_data (cfg,{label1name,label2name},[1 -1], regressor_names,betaDir); % 1 -1 are arbitrary label numbers
+                    cfg.design = make_design_cv(cfg);
+                    
+                    % cross classification
+                    %     cfg = decoding_describe_data(cfg,{'Front-L','Front-R','Back-L','Back-R'},[1 -1 1 -1],regressor_names,betaDir,[2 2 1 1 ]);
+                    %     cfg.design = make_design_xclass(cfg);
+                    
+                    [results,cfg] = decoding(cfg);
+                    
+                    
+                    acc(label1,label2,thesub,theroi) = results.accuracy_minus_chance.output ;
+                    cfg.files.descr(logical(cfg.design.train(:,1)))
+                end
+            end
+        end
+    end
+    save(fullfile(resultDir,'DecodingAcc.mat'), 'acc')
+    
+end
+
+save(fullfile(homeDir,'DecodingAcc.mat'), 'acc')
+
+
+%% plot
+%load(fullfile(homeDir,'DecodingAcc.mat'))
+figure;
+for theroi = 1:length(ROIs)
+    
+    groupAcc = mean(acc(:,:,:,theroi),3);
+    groupAcc = groupAcc+ groupAcc';
+    groupAcc_norm = (groupAcc-min(groupAcc(:)))/max(groupAcc(:));
+    groupAcc_norm(logical(eye(length(Condis)))) = deal(0) %
+    
+    subplot(2, length(ROIs), theroi)
+    colormap(gca, hot);
+    imagesc(groupAcc_norm);
+    colormap(gca, hot);
+    
+    xticks(1:size(groupAcc,2));
+    yticks(1:size(groupAcc,1));
+    xticklabels(Condis);
+    yticklabels(Condis);
+    set(gca,'XAxisLocation','top','YAxisLocation','Left')
+       
+    title(ROIs{theroi})
+    colorbar;
+    
+    subplot(2,length(ROIs), theroi+length(ROIs))
+newCoordinate = mdscale(groupAcc_norm,2)
+scatter(newCoordinate(:,1),newCoordinate(:,2),"filled");
+text(newCoordinate(:,1)+0.1,newCoordinate(:,2),Condis)
+end
+
+
+groupAcc_norm = (groupAcc-min(groupAcc(:)))/max(groupAcc(:));
+groupAcc_norm(logical(eye(length(Condis)))) = deal(0) %
+newCoordinate = mdscale(groupAcc_norm,2)
+scatter(newCoordinate(:,1),newCoordinate(:,2))
+text(newCoordinate(:,1),newCoordinate(:,2)+0.1,Condis)
+
+
+%% thoeratical models
+directions = [ones(1,6), 2* ones(1,6)];
+views = repmat([1 1 1 2 2 2],1,2)
+visual = directions~=views;
+
+[hor,ver] = meshgrid(directions,directions);
+Model_dire = double(hor ==ver);
+
+[hor,ver] = meshgrid(views,views);
+Model_view = double(hor ==ver);
+
+[hor,ver] = meshgrid(visual,visual);
+Model_visu = double(hor ==ver);
+
+X = [reshape(Model_dire,[],1),reshape(Model_view,[],1),reshape(Model_visu,[],1)];
+[coeff,p] = deal(nan(size(acc,3),size(X,2)+1,size(acc,4)));
+figure
+%remember to transform to similarity matrix
+for theroi = 1:size(acc,4)
+    for thesub = 1:size(acc,3)
+        y = 1- reshape(acc(:, :, thesub,theroi),[],1);
+        mdl = fitlm(X,y,'linear');
+        coeff(thesub,:,theroi) = mdl.Coefficients.Estimate;
+        p(thesub,:,theroi) = mdl.Coefficients.pValue;
+    end
+     for thecoeff = 2:4
+   [h,p20] = ttest(coeff(:,thecoeff,theroi),0);
+    p2zero(thecoeff-1,theroi) = p20;
+end
+subplot(1,2,theroi);
+x = 1:size(X,2);
+    plot(x, coeff(:,2:end,theroi),'-o','MarkerSize',5, 'MarkerFaceColor', [1 1 1]);
+    title(ROIs{theroi})
+    xticks(x);
+    xticklabels({'Posture', 'View', 'Visual'});
+    text(
+
+end
+
+
+[h,p] = ttest(coeff(:,2,1),0)
+%%
+x = 1:length(ROIs);
+y = acc;
+h2 = plot(x, y', 'o','MarkerSize',8);
+[h2(:).LineWidth] = deal(2);
+hold on
+yline(0)
+xlim([0,length(x) + 1])
+ylim([-50,50])
+xticks(x);
+xticklabels(ROIs(x));
+title('acc above chance')
+%% permutation t test
+% cfg.design = make_design_permutation (cfg,500,1); % creates one design with 1000 permutations
+% [reference,cfg] = decoding(cfg); % run permutations
+% cfg.stats.test = 'permutation'; % set test
+% cfg.stats.tail = 'right'; % set tail of statistical correction
+% cfg.stats.output = 'accuracy_minus_chance'; % choose from all original outputs
+% p = decoding_statistics (cfg,results,reference);
+%
+

@@ -1,0 +1,76 @@
+% 
+ addpath /home/predatt/qiuhan/Documents/Toolboxs/spm12/
+ homeDir = '/project/3018068.01/' ;
+cd(homeDir);
+
+thesub = 1;
+RunType  = 'Localizer_BM';       
+behavDir = ['BodyBias-Qiu/Data_Lab/Sub' sprintf('%02d', thesub)];
+brainDir = ['bids/derivatives/fmriprep/sub-' sprintf('%03d', thesub) '/func'] ;
+
+ % create output directory (in [univariate] folder)
+resultDir     =  fullfile(homeDir,  'Results', RunType);
+if ~exist( resultDir, 'dir') 
+    mkdir( resultDir); 
+end
+
+
+matlabbatch{1}.spm.stats.fmri_spec.dir = {resultDir};
+matlabbatch{1}.spm.stats.fmri_spec.timing.units = 'secs';
+matlabbatch{1}.spm.stats.fmri_spec.timing.RT = 1.5;
+matlabbatch{1}.spm.stats.fmri_spec.timing.fmri_t = 16;
+matlabbatch{1}.spm.stats.fmri_spec.timing.fmri_t0 = 8;
+%%
+% get brain data 
+
+
+thesub = 1;
+RunType  = 'Localizer_BM';   
+
+onsetFile     = fullfile(homeDir, 'Results', 'Onsets', ['sub-' sprintf('%03d', thesub)], ['onset_' RunType '.mat']);
+brainDir = ['bids/derivatives/fmriprep/sub-' sprintf('%03d', thesub) '/func'] ;
+
+data4D = fullfile(homeDir, brainDir, ['sub-' sprintf('%03d', thesub) '_task-bmloc_run-1_space-MNI152NLin2009cAsym_desc-preproc_bold.nii.gz']);
+% Gunzip if necessary
+[~,~,ext] = fileparts(data4D);
+if strcmp(ext,'.gz')
+    if isunix
+        cmd = ['gunzip ' data4D];
+        system(cmd);
+    elseif ispc
+        warning('gunzip in Matlab is EXTREMELY slow!')
+        gunzip(data4D);
+    end
+end
+data4D = erase(data4D, '.gz');
+
+frames = spm_select('expand' , data4D);
+
+matlabbatch{1}.spm.stats.fmri_spec.sess.scans = cellstr(frames);
+
+%%
+matlabbatch{1}.spm.stats.fmri_spec.sess.cond = struct('name', {}, 'onset', {}, 'duration', {}, 'tmod', {}, 'pmod', {}, 'orth', {});
+matlabbatch{1}.spm.stats.fmri_spec.sess.multi = {onsetFile};
+matlabbatch{1}.spm.stats.fmri_spec.sess.regress = struct('name', {}, 'val', {});
+matlabbatch{1}.spm.stats.fmri_spec.sess.multi_reg = {''};
+matlabbatch{1}.spm.stats.fmri_spec.sess.hpf = 128;
+matlabbatch{1}.spm.stats.fmri_spec.fact = struct('name', {}, 'levels', {});
+matlabbatch{1}.spm.stats.fmri_spec.bases.hrf.derivs = [0 0];
+matlabbatch{1}.spm.stats.fmri_spec.volt = 1;
+matlabbatch{1}.spm.stats.fmri_spec.global = 'None';
+matlabbatch{1}.spm.stats.fmri_spec.mthresh = 0.8;
+matlabbatch{1}.spm.stats.fmri_spec.mask = {''};
+matlabbatch{1}.spm.stats.fmri_spec.cvi = 'AR(1)';
+
+
+%% 
+matlabbatch{2}.spm.stats.fmri_est.spmmat = {[resultDir '/SPM.mat']};
+matlabbatch{2}.spm.stats.fmri_est.write_residuals = 1;
+matlabbatch{2}.spm.stats.fmri_est.method.Classical = 1;
+
+spm_jobman( 'run', matlabbatch);
+
+
+% Compress the file and delete the expanded
+% gzip(data4D);
+% delete(data4D);

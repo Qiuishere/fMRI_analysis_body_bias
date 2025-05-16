@@ -1,0 +1,77 @@
+% make contrasts among conditions
+% input: the betas produced by model fitting + contrasts (hypotheses)
+% output: 
+% con.nii:  contrast of betas
+% spmT.nii: all t values = con map/variance map
+% spmT_thresholded.nii: t values above the threshold
+% spmT_allcluster: binary mask of voxels above threshold
+
+
+clear
+thesub = 9;
+
+addpath /home/predatt/qiuhan/Documents/Toolboxs/spm12/
+homeDir = '/project/3018068.01/' ;
+cd(homeDir);
+
+
+brainDir = ['bids/derivatives/fmriprep/sub-' sprintf('%03d', thesub) '/func'] ;
+
+[Runs(1:3).Type]  = deal('Localizer_Obj', 'Localizer_BM', 'Test'); % train runs don need univariate contrast
+[Runs.nameInBids] = deal('objloc' ,'bmloc', 'test');
+[Runs.NRuns] = deal(2,1,5);
+
+%% define contrasts for each runtype
+
+contrasts(1).name   = {'Body', 'Limb'};
+contrasts(1).weight = {[2 -1 -1 0], [-1 -1 2 0]};% {'1-body','2-car','3-limb','4-scrambled'}
+
+contrasts(2).name   = {'Biological motion'};
+contrasts(2).weight = {[1 -1]};
+
+contrasts(3).name   = {'MovingUp-MovingDown', 'Interaction'};
+contrasts(3).weight = {[1 -1 1 -1], [1 -1 -1 1]}; %{'Front-Up','Front-Down','Back-Up','Back-Down'}
+% the order of conditions is determined as in the onset file
+
+
+%%
+for thetype = 1:length(Runs)
+    
+    % get SPM.mat from result after estimation
+    
+    resultDir     =  fullfile(homeDir, 'Results', 'Betas', ['sub-' sprintf('%03d', thesub)], Runs(thetype).Type);
+    
+    matlabbatch = [];
+    matlabbatch{1}.spm.stats.con.spmmat = cellstr(strcat(resultDir,'/SPM.mat'));
+    
+    for thecontr = 1: length(contrasts(thetype).name)
+        
+        % paddle with zeros for motion regressor
+        weights = repmat([contrasts(thetype).weight{thecontr}, zeros(1,6)],1,Runs(thetype).NRuns);
+        matlabbatch{1}.spm.stats.con.consess{thecontr}.tcon.name = contrasts(thetype).name{thecontr};
+        matlabbatch{1}.spm.stats.con.consess{thecontr}.tcon.convec = weights;
+        matlabbatch{1}.spm.stats.con.consess{thecontr}.tcon.sessrep = 'none';
+    end
+    
+    matlabbatch{1}.spm.stats.con.delete = 1;
+    
+    spm_jobman('run',matlabbatch);
+
+    %% set parameters for the output results
+    matlabbatch = [];
+    matlabbatch{1}.spm.stats.results.spmmat = cellstr(strcat(resultDir,'/SPM.mat'));
+    matlabbatch{1}.spm.stats.results.conspec.titlestr = '';
+    matlabbatch{1}.spm.stats.results.conspec.contrasts = 1;
+    matlabbatch{1}.spm.stats.results.conspec.threshdesc = 'FWE';
+    matlabbatch{1}.spm.stats.results.conspec.thresh = 0.05;
+    matlabbatch{1}.spm.stats.results.conspec.extent = 10;
+    matlabbatch{1}.spm.stats.results.conspec.conjunction = 1;
+    matlabbatch{1}.spm.stats.results.conspec.mask.none = 1;
+    matlabbatch{1}.spm.stats.results.units = 1;
+    matlabbatch{1}.spm.stats.results.export{1}.tspm.basename = '_thresholded';
+    matlabbatch{1}.spm.stats.results.export{2}.binary.basename = '_allcluster'; % binary
+    matlabbatch{1}.spm.stats.results.export{3}.jpg = true;
+
+    spm_jobman('run',matlabbatch);
+    
+end

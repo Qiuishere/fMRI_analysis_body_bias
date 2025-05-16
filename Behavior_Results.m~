@@ -1,0 +1,69 @@
+%% analysis of behaviour data inside of the scanner
+
+clear
+
+Set_Up;
+Condis = {'Front-Up', 'Front-Down', 'Back-Up', 'Back-Down'};
+
+f = figure;
+colormap(f,hot)
+
+for thesub = 1:length(Subs)
+    behavDir = ['BodyBias-Qiu/Data_Lab/sub-' sprintf('%03d', Subs(thesub)), '/Test/'];
+    
+    if exist(behavDir, 'dir')
+        files = dir([behavDir, '*.mat']);
+        
+        
+        for therun = 1: length(files)
+            load(fullfile(behavDir,files(therun).name), 'accRS','T')
+        T.ifcorrect = T.resp == T.correctKey; % no reponse for MVPA trials are also correct
+        RStrialId = ~isnan(T.angle2) & T.img1Onset ~= 0; % get the RS trials
+
+        % check fatigue
+        for thestage = 1:3
+            theid = 1:height(T)/3 + height(T)/3*(thestage-1);
+            allid = 1:height(T);
+            a = T.ifcorrect(theid);
+            RStrials = RStrialId(theid);
+            
+            accStage{thesub}(therun, thestage) = mean(a(RStrials)); 
+        end
+                   
+%         for thedir = 1:2
+%             for themovingdir = 1:2
+%                 trialid = RStrialId & strcmp(T.direction,directions(thedir)) & T.movingDir==movingDirs(themovingdir);
+%                 accRS(thedir,themovingdir) = mean(T.ifcorrect(trialid)); % only calculate acc for RS trials
+%             end
+%         end
+        accRS = reshape(accRS',[],1);
+        
+        Acc{thesub}(:,therun) = accRS; %front-up, front-down, back-up, back-down
+        end
+        
+ 
+        
+        subplot(2, ceil(length(Subs)/2), thesub)
+h1 = plot(1:5, Acc{thesub},'-o','MarkerSize',8, 'MarkerFaceColor', [1 1 1]);
+    legend(cellfun(@num2str, num2cell(1:length(files)),'UniformOutput',false))
+    [h1(:).LineWidth] = deal(2);
+    xticks([ 1 2 3 4]);
+    xticklabels(Condis);
+    xlim([0 5]);
+    ylim([0 inf])
+    title(['Sub-' num2str(Subs(thesub))])
+colormap(gca,parula(4))
+
+        submean = mean(Acc{thesub},3);
+        
+
+    end
+end
+
+
+% loo
+figure
+for thesub = 1: length(Subs)
+    plot(1:3, mean(accStage{thesub},1))
+    hold on
+end

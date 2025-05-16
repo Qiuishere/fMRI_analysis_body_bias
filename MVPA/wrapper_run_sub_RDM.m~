@@ -1,0 +1,59 @@
+%% define conditions to decode
+
+clear
+cd ..
+Set_Up;
+taskType = 'RS';
+useCluster = 1;
+
+onsetFile = fullfile(['Results/Onsets/sub-' sprintf('%03d',Subs(1))], ['onset_' taskType '_run-1.mat' ]);
+load(onsetFile, 'names')
+Condis = names(1:end-1);
+Ncondi= length(Condis);
+
+% Condis = {'Front-L', 'Front-R', 'Back-L', 'Back-R'};
+ROIs = {'V1', 'Body','Limb'};
+Nroi = length(ROIs);
+Nsub = length(Subs);
+
+analysis = 'searchlight';
+metric = 'decoding';
+
+%% start to decode
+% acc= zeros(Ncondi,Ncondi,Nsub,Nroi);
+
+for thesub = 1:Nsub
+    if useCluster
+        req_mem   = 10^9 *200; % in GB
+        req_etime = 3600 *4; % seconds/hour * hour
+         subjobs{thesub} = qsubfeval(@get_sub_decoding, taskType, Subs, thesub, ROIs, Condis, metric,analysis,'memreq',  req_mem,  'timreq',  req_etime);
+%                 subjobs{thesub} = qsubfeval(@get_sub_RDM,taskType, Subs, thesub, ROIs,metric, 'memreq',  req_mem,  'timreq',  req_etime);
+
+        % monitor job
+%         for j = subjobs
+%             jid = qsublist('getpbsid',j);
+%             cmd = sprintf('qstat %s', jid);
+%             unix(cmd)
+%         end
+    else
+%         run_sub_MVPA(taskType, Subs, thesub, ROIs, Condis,metric)
+        get_sub_RDM(taskType, Subs, thesub, ROIs,metric)
+    end
+end
+
+thesub=1
+
+Dirs = get_directories_for_thesub(Subs(thesub));
+betaDir = fullfile(Dirs.betas, taskType);
+vol = spm_read_vols(spm_vol(fullfile(betaDir, 'beta_0001.nii')));
+voxId = find(~isnan(vol));
+decodingVol = nan(size(vol));
+decodingVol(voxId) = results.accuracy_minus_chance.output;
+% set mask properties
+area_vol    =   uint8( area_vol);
+roi_hdr.dt    =   [2 0];
+
+% change header, save file
+filename    =   sprintf( '%s%s_mask.nii', sides{theside},mask_names{themask});
+roi_hdr.fname = fullfile(TemplateDir, filename);
+spm_write_vol( roi_hdr, area_vol);

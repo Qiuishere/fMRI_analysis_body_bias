@@ -1,0 +1,42 @@
+%% define conditions to decode
+
+clear
+
+Set_Up;
+taskType = 'Test-angle';
+useCluster = 0;
+
+onsetFile = fullfile('Results/Onsets/sub-001', ['onset_' taskType '_run-1.mat' ]);
+load(onsetFile, 'names')
+Condis = names;
+Ncondi= length(Condis);
+
+% Condis = {'Front-L', 'Front-R', 'Back-L', 'Back-R'};
+ROIs = {'V1', 'Body','Limb'};
+Nroi = length(ROIs);
+Nsub = length(Subs);
+
+metric = 'crossnobis';
+%% start to decode
+% acc= zeros(Ncondi,Ncondi,Nsub,Nroi);
+
+for thesub = 1:Nsub
+    if useCluster
+        req_mem   = 10^9 *25; % in GB
+        req_etime = 3600 *4; % seconds/hour * hour
+        subjobs{thesub} = qsubfeval(@run_sub_MVPA, taskType, Subs, thesub, ROIs, Condis, metric,'memreq',  req_mem,  'timreq',  req_etime);
+        
+        % monitor job
+%         for j = subjobs
+%             jid = qsublist('getpbsid',j);
+%             cmd = sprintf('qstat %s', jid);
+%             unix(cmd)
+%         end
+    else
+        run_sub_MVPA(taskType, Subs, thesub, ROIs, Condis,metric)
+    end
+end
+
+
+
+

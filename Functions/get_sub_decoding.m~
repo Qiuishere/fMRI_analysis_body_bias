@@ -1,0 +1,124 @@
+function get_sub_decoding(taskType, Subs, thesub, ROIs, Condis,metric,analysis)
+Dirs = get_directories_for_thesub(Subs(thesub));
+betaDir = fullfile(Dirs.betas, taskType);
+
+resultDir = fullfile(Dirs.mvpa, taskType);
+if ~exist( resultDir, 'dir')
+    mkdir( resultDir);
+end
+if strcmp(analysis, 'roi')
+    
+ROIdir{1} = fullfile('Results', 'Masks', 'Templates', 'realigned_V1_mask.nii');
+ROIdir{2} = fullfile(Dirs.masks, [ROIs{2}, '.nii']);
+ROIdir{3} = fullfile(Dirs.masks, [ROIs{3}, '.nii']);
+Nroi = length(ROIs);
+else Nroi = 1;
+end
+
+
+for theroi = 1:Nroi
+    
+    cfg = decoding_defaults();
+    cfg.analysis = analysis ;
+    
+    if strcmp(analysis, 'roi')
+        cfg.files.mask = ROIdir{theroi};
+    else
+        % Searchlight-specific parameters
+        cfg.searchlight.unit = 'mm';
+        cfg.searchlight.radius = 6; % this will yield a searchlight radius of 12mm.
+        cfg.searchlight.spherical = 0;
+        cfg.plot_selected_voxels = 30; % Plot every 30' step
+        
+    end
+    cfg.results.overwrite = 1;
+    cfg.results.dir = resultDir;
+    labelnames = Condis;
+    
+%     for label1 = 1:length(Condis)
+%         for label2 = 1: length(Condis)
+%             if label2>=label1 % get only the upper triangle
+%                 
+%                 label1name = Condis{label1};
+%                 label2name = Condis{label2};
+                labels = [1 1 2 1 1 2];
+                
+                if strcmp(metric, 'decoding')
+                    
+                    cfg.decoding.method = 'classification'; % this is more a placeholder
+% Enable scaling min0max1 (otherwise libsvm can get VERY slow)
+% if you dont need model parameters, and if you use libsvm, use:
+cfg.scale.method = 'min0max1';
+cfg.scale.estimation = 'all'; % scaling across all data is equivalent to no scaling (i.e. will yield the same results), it only changes the data range which allows libsvm to compute faster
+
+%                     % These parameters carry out the multivariate noise normalization using the
+%                     % residuals
+%                     cfg.scale.method = 'cov'; % we scale by noise covariance
+%                     cfg.scale.estimation = 'separate'; % we scale all data for each run separately while iterating across searchlight spheres
+%                     cfg.scale.shrinkage = 'lw2'; % Ledoit-Wolf shrinkage retaining variances
+%                     [misc.residuals,cfg.files.residuals.chunk] = residuals_from_spm(fullfile(betaDir,'SPM.mat'),cfg.files.mask); % this only needs to be run once and can be saved and loaded
+                    % The following function extracts all beta names and corresponding run
+                    % numbers from the SPM.mat
+                    regressor_names = design_from_spm(betaDir);
+                    
+                    % Extract all information for the cfg.files structure (labels will be [1 -1] )
+                    cfg = decoding_describe_data(cfg,labelnames,labels,regressor_names,betaDir);
+                    
+                    % This creates a design in which cross-validation is done between the distance estimates
+                    cfg.design = make_design_cv(cfg);
+                    
+                    % Run decoding
+                    results = decoding(cfg);
+                    
+                    
+                    
+                elseif      strcmp(metric, 'corr')
+                    
+                    % set everything to similarity analysis (for available options as model parameters, check decoding_software/pattern_similarity/pattern_similarity.m)
+                    cfg.decoding.software = 'similarity';
+                    cfg.decoding.method = 'classification';
+                    cfg.decoding.train.classification.model_parameters = metric; % this is pearson correlation
+                    cfg.results.output = 'other_average';
+                    
+                    cfg.scale.method = 'min0max1';
+                    cfg.scale.estimation = 'all'; % scaling across all data is equivalent to no scaling (i.e. will yield the same results), it only changes the data range which allows libsvm to compute faster
+                    
+                    % The following function extracts all beta names and corresponding run
+                    % numbers from the SPM.mat
+                    regressor_names = design_from_spm(betaDir);
+                    
+                    % Extract all information for the cfg.files structure (labels will be [1 -1] )
+                    cfg = decoding_describe_data(cfg,labelnames,labels,regressor_names,betaDir);
+                    
+                    % This creates a design in which all data is used to calculate the similarity
+                    cfg.design = make_design_similarity(cfg);
+                    
+                    results = decoding(cfg);
+                end
+            end
+            %                 % this toolbox doesn average runs, so we have to do it ourselves
+            %                 matrix = results.other_average.output{1,1} ;
+            %                 imagesc(matrix)
+            %                 Ncondi  = length(labelnames);
+            %                 Nrun = size(matrix,1)/Ncondi;
+            % for condi1 = 1:Ncondi
+            %     for condi2 = 1:Ncondi
+            %         initId.r = Nrun * (condi1-1) +1;
+            %         initId.c = Nrun * (condi2-1) +1;
+            %         submatrix = matrix(initId.r:(initId.r+Nrun-1),initId.c:(initId.c+Nrun-1));
+            %         aveMatrix(condi1,condi2) = mean(diag(submatrix));
+            %     end
+            % end
+
+    
+    
+%     
+%     figure;imagesc(aveMatrix);
+%     acc(:,:,theroi) = mean(aveMatrix,3);
+%     save(['Results/sub-' num2str(thesub) '_' metric '.mat'], 'acc')
+%     
+%     
+    
+    
+    
+save(fullfile(resultDir,  [metric '.mat']), 'results', 'cfg')
